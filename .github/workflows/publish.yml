@@ -1,0 +1,185 @@
+name: Publish image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish.yml
+      - Dockerfile
+      - entrypoint.sh
+      - rootfs/**
+      - tests/**
+  pull_request:
+  schedule:
+    # Daily check for new pnpm / Node.js LTS releases; Mondays always rebuild
+    # to pick up Debian security updates.
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if nothing changed
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/demonmartin/pterodactyl-pnpm
+  NODE_IMAGE: node:lts-trixie-slim
+
+jobs:
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      pnpm: ${{ steps.resolve.outputs.pnpm }}
+      inputs: ${{ steps.resolve.outputs.inputs }}
+      build: ${{ steps.resolve.outputs.build }}
+    steps:
+      - id: resolve
+        env:
+          FORCE: ${{ github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.force) }}
+        run: |
+          pnpm=$(curl -fsSL https://registry.npmjs.org/@pnpm/exe/latest | jq -r .version)
+          node=$(docker buildx imagetools inspect "$NODE_IMAGE" --format '{{json .Manifest}}' | jq -r .digest)
+          inputs="pnpm=${pnpm} node=${node}"
+          published=$(docker buildx imagetools inspect "$IMAGE:latest" --format '{{json .Image}}' 2>/dev/null |
+            jq -r '[.. | objects | .Labels? // empty | .["io.github.demonmartin.pnpm.inputs"] // empty] | first // empty' || true)
+
+          build=false
+          if [ "$FORCE" = true ] || [ "$(date -u +%u)" = 1 ] || [ "$inputs" != "$published" ]; then
+            build=true
+          fi
+          echo "Latest:    $inputs"
+          echo "Published: ${published:-none}"
+          echo "Build:     $build"
+          {
+            echo "pnpm=$pnpm"
+            echo "inputs=$inputs"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: versions
+    if: needs.versions.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - id: arch
+        run: echo "name=${PLATFORM#linux/}" >> "$GITHUB_OUTPUT"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
+      - name: Build for testing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          pull: true
+          load: true
+          tags: pterodactyl-pnpm:test
+          build-args: |
+            NODE_IMAGE=${{ env.NODE_IMAGE }}
+            PNPM_VERSION=${{ needs.versions.outputs.pnpm }}
+          labels: io.github.demonmartin.pnpm.inputs=${{ needs.versions.outputs.inputs }}
+          cache-from: type=gha,scope=${{ steps.arch.outputs.name }}
+          cache-to: type=gha,mode=max,scope=${{ steps.arch.outputs.name }}
+
+      - name: Test
+        run: SKIP_BROWSERS=1 bash tests/run.sh pterodactyl-pnpm:test
+
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        if: github.event_name != 'pull_request'
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        with:
+          images: ${{ env.IMAGE }}
+
+      - id: push
+        name: Push by digest
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            NODE_IMAGE=${{ env.NODE_IMAGE }}
+            PNPM_VERSION=${{ needs.versions.outputs.pnpm }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            io.github.demonmartin.pnpm.inputs=${{ needs.versions.outputs.inputs }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ steps.arch.outputs.name }}
+
+      - if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: digests-${{ steps.arch.outputs.name }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    needs: [versions, build]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=pnpm-${{ needs.versions.outputs.pnpm }}
+            type=sha,format=long
+
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          mapfile -t tags < <(jq -r '.tags[] | "--tag", .' <<<"$DOCKER_METADATA_OUTPUT_JSON")
+          sources=()
+          for digest in *; do sources+=("${IMAGE}@sha256:${digest}"); done
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          docker buildx imagetools inspect "${IMAGE}:latest"

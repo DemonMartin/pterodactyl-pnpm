@@ -1,0 +1,152 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": "https://raw.githubusercontent.com/DemonMartin/pterodactyl-pnpm/main/egg-pnpm.json"
+    },
+    "exported_at": "2026-10-27T00:00:00+00:00",
+    "name": "pnpm",
+    "author": "49092993+DemonMartin@users.noreply.github.com",
+    "description": "Runs Node.js applications with pnpm. Any Node.js and pnpm version, deployment from Git with auto updates, and a persistent pnpm store for fast installs.",
+    "features": [],
+    "docker_images": {
+        "pnpm (Node.js LTS, any version selectable)": "ghcr.io/demonmartin/pterodactyl-pnpm:latest"
+    },
+    "file_denylist": [],
+    "startup": "pnpm run {{START_SCRIPT}}",
+    "config": {
+        "files": "{}",
+        "startup": "{\"done\": \":/home/container$ \"}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# Nothing to install up front: on every start the image clones or updates the\n# Git repository, selects Node.js and pnpm, and installs dependencies with the\n# correct paths and permissions of the running server.\nmkdir -p /mnt/server\necho \"Done. The repository is cloned and dependencies are installed when the server starts.\"\n",
+            "container": "ghcr.io/demonmartin/pterodactyl-pnpm:latest",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Start Script",
+            "description": "package.json script that starts the application (pnpm run <script>).",
+            "env_variable": "START_SCRIPT",
+            "default_value": "start",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Node.js Version",
+            "description": "Empty uses the bundled Node.js LTS. Otherwise any version pnpm can install: a major (22), an exact version (20.18.1), lts or latest. Downloaded once and cached.",
+            "env_variable": "NODE_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "pnpm Version",
+            "description": "Empty uses the bundled pnpm, which follows the project's packageManager field. Otherwise a version or range (10, 9.15.9, latest) that overrides it.",
+            "env_variable": "PNPM_VERSION",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Repository",
+            "description": "HTTPS URL of the repository to deploy. Empty disables Git (upload files manually).",
+            "env_variable": "GIT_REPO",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Branch",
+            "description": "Branch to deploy. Empty uses the repository's default branch.",
+            "env_variable": "GIT_BRANCH",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Username",
+            "description": "Username for private repositories (optional; any value works for GitHub tokens).",
+            "env_variable": "GIT_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Git Access Token",
+            "description": "Personal access token for private repositories. Only sent to the repository's host and never written to disk.",
+            "env_variable": "GIT_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto Update",
+            "description": "Update to the latest commit of the branch on every start. Local edits to tracked files are replaced; untracked files such as .env are kept.",
+            "env_variable": "AUTO_UPDATE",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Install Dependencies",
+            "description": "Run pnpm install on every start (fast when nothing changed).",
+            "env_variable": "INSTALL_DEPS",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Install Flags",
+            "description": "Extra flags for pnpm install, e.g. --prod or --frozen-lockfile.",
+            "env_variable": "INSTALL_FLAGS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:256",
+            "field_type": "text"
+        },
+        {
+            "name": "Allow Build Scripts",
+            "description": "Allow all dependency build scripts (pnpm blocks them by default). Prefer listing trusted packages under allowBuilds in pnpm-workspace.yaml.",
+            "env_variable": "ALLOW_BUILD_SCRIPTS",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Build Script",
+            "description": "package.json script run after installing and before starting, e.g. build. Empty skips it.",
+            "env_variable": "BUILD_SCRIPT",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128",
+            "field_type": "text"
+        }
+    ]
+}

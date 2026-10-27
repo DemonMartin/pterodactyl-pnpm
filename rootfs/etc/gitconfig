@@ -1,0 +1,12 @@
+[safe]
+	# The installer, Wings and SFTP may leave files owned by different UIDs.
+	directory = *
+[credential]
+	# Answers with GIT_USERNAME / GIT_TOKEN, so no secret is written to disk.
+	helper = /usr/local/bin/git-credential-env
+[init]
+	defaultBranch = main
+[advice]
+	detachedHead = false
+[pull]
+	ff = only

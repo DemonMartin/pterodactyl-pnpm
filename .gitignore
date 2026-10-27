@@ -1,0 +1,4 @@
+*.log
+*.tmp
+.DS_Store
+pnpm-main.zip
